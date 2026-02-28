@@ -21,7 +21,7 @@ Resources:
     Properties:
       PackageType: Image
       Architectures:
-        - x86_64
+        - arm64
       Environment:
         Variables:
           CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif,.tiff,.TIF,.TIFF
