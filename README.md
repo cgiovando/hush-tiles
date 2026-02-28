@@ -163,6 +163,16 @@ docs/
 - **Multiple images**: Mosaic endpoint for serving several COGs as a single layer
 - **Custom domain**: `tiles.hot.example.org` instead of API Gateway URL
 
+## AI-assisted development
+
+> This project was developed with significant assistance from AI coding tools.
+
+- **[Claude Code](https://claude.ai/claude-code)** (Anthropic) — code generation, architecture, debugging, and documentation
+- All functionality has been tested and verified to work as intended
+- Features and infrastructure choices have been reviewed and approved by the maintainer
+
+This disclosure follows emerging best practices for transparency in AI-assisted software development.
+
 ## License
 
 [BSD-2-Clause](LICENSE)
