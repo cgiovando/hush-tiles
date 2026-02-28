@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Private Imagery Viewer</title>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; }
+    #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+    .panel {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 1;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      padding: 16px;
+      max-width: 380px;
+      font-size: 14px;
+    }
+    .panel h2 { font-size: 15px; margin-bottom: 10px; color: #333; }
+    .panel label { display: block; margin-bottom: 6px; color: #555; font-size: 13px; }
+    .panel input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: monospace;
+      margin-bottom: 10px;
+    }
+    .panel .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .panel .row label { margin: 0; white-space: nowrap; min-width: 70px; }
+    .panel input[type="range"] { flex: 1; }
+    .panel .row span { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+    .panel button {
+      background: #d73f3f;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      width: 100%;
+      margin-top: 4px;
+    }
+    .panel button:hover { background: #b83232; }
+    .panel select {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+    .panel .hint {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #eee;
+      font-size: 12px;
+      color: #888;
+      line-height: 1.4;
+    }
+    .toggle-btn {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 2;
+      background: #fff;
+      border: none;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 14px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <button class="toggle-btn" id="toggle-btn" onclick="togglePanel()">Settings</button>
+  <div class="panel" id="panel">
+    <h2>Private Imagery Viewer</h2>
+
+    <label for="env-preset">Environment</label>
+    <select id="env-preset" onchange="applyPreset()">
+      <option value="local">Local (localhost:8000)</option>
+      <option value="aws">AWS (API Gateway)</option>
+      <option value="custom">Custom</option>
+    </select>
+
+    <label for="titiler-url">TiTiler base URL</label>
+    <input type="text" id="titiler-url" value="http://localhost:8000">
+
+    <label for="cog-url">COG URL</label>
+    <input type="text" id="cog-url" value="file:///Users/cristiano/projects/hot/private-imagery/data/test-image-clean.tif">
+
+    <div class="row">
+      <label>
+        <input type="checkbox" id="nodata-toggle" checked> nodata=0
+      </label>
+      <span style="font-size: 12px; color: #888;">(black → transparent)</span>
+    </div>
+
+    <div class="row">
+      <label for="threshold">Edge cleanup</label>
+      <input type="range" id="threshold" min="0" max="50" value="0">
+      <span id="threshold-val">off</span>
+    </div>
+
+    <div class="row">
+      <label for="opacity">Opacity</label>
+      <input type="range" id="opacity" min="0" max="100" value="100">
+      <span id="opacity-val">100%</span>
+    </div>
+
+    <button onclick="loadImagery()">Load / Reload</button>
+
+    <div class="hint">
+      Tile URL template for uMap:<br>
+      <code id="tile-template" style="word-break: break-all; font-size: 11px;"></code>
+    </div>
+  </div>
+
+  <script>
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          }
+        },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+      },
+      center: [-80.4218, -0.9775],
+      zoom: 16,
+      hash: true
+    });
+
+    map.addControl(new maplibregl.NavigationControl());
+
+    // Environment presets
+    const PRESETS = {
+      local: {
+        titiler: 'http://localhost:8000',
+        cog: 'file:///Users/cristiano/projects/hot/private-imagery/data/test-image-clean.tif'
+      },
+      aws: {
+        titiler: '', // Set after first deploy — paste API Gateway URL here
+        cog: 's3://private-imagery-cog/imagery/test-image-clean.tif'
+      }
+    };
+
+    function applyPreset() {
+      const preset = document.getElementById('env-preset').value;
+      if (preset === 'custom') return;
+      const p = PRESETS[preset];
+      if (!p) return;
+      document.getElementById('titiler-url').value = p.titiler;
+      document.getElementById('cog-url').value = p.cog;
+    }
+
+    // Detect preset from URL hash params (e.g., #env=aws)
+    (function() {
+      const params = new URLSearchParams(location.hash.replace(/^#/, '').replace(/^.*?&?env=/, 'env='));
+      const env = params.get('env');
+      if (env && PRESETS[env]) {
+        document.getElementById('env-preset').value = env;
+        applyPreset();
+      }
+    })();
+
+    const opacitySlider = document.getElementById('opacity');
+    const opacityVal = document.getElementById('opacity-val');
+    opacitySlider.addEventListener('input', () => {
+      const v = opacitySlider.value;
+      opacityVal.textContent = v + '%';
+      if (map.getLayer('imagery')) {
+        map.setPaintProperty('imagery', 'raster-opacity', v / 100);
+      }
+    });
+
+    const thresholdSlider = document.getElementById('threshold');
+    const thresholdVal = document.getElementById('threshold-val');
+    thresholdSlider.addEventListener('input', () => {
+      const v = thresholdSlider.value;
+      thresholdVal.textContent = v === '0' ? 'off' : v;
+    });
+
+    // Canvas for client-side near-black pixel processing
+    const processCanvas = document.createElement('canvas');
+    const processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
+
+    // Custom protocol: fetch tile, make near-black pixels transparent via canvas
+    maplibregl.addProtocol('cleantile', async (params, abortController) => {
+      const baseUrl = document.getElementById('titiler-url').value;
+      const scheme = baseUrl.startsWith('https') ? 'https://' : 'http://';
+      const realUrl = params.url.replace('cleantile://', scheme);
+
+      const response = await fetch(realUrl, { signal: abortController.signal });
+      if (!response.ok) throw new Error(`Tile fetch failed: ${response.status}`);
+      const blob = await response.blob();
+
+      const t = parseInt(document.getElementById('threshold').value);
+      if (t === 0) return { data: await blob.arrayBuffer() };
+
+      const img = await createImageBitmap(blob);
+      processCanvas.width = img.width;
+      processCanvas.height = img.height;
+      processCtx.drawImage(img, 0, 0);
+
+      const imageData = processCtx.getImageData(0, 0, img.width, img.height);
+      const px = imageData.data;
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i] <= t && px[i + 1] <= t && px[i + 2] <= t) {
+          px[i + 3] = 0;
+        }
+      }
+
+      processCtx.putImageData(imageData, 0, 0);
+      const out = await new Promise(r => processCanvas.toBlob(r, 'image/png'));
+      return { data: await out.arrayBuffer() };
+    });
+
+    function buildTileUrl() {
+      const base = document.getElementById('titiler-url').value.replace(/\/$/, '');
+      const cogUrl = document.getElementById('cog-url').value;
+      const nodata = document.getElementById('nodata-toggle').checked;
+      let url = `${base}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png?url=${encodeURIComponent(cogUrl)}`;
+      if (nodata) url += '&nodata=0';
+      return url;
+    }
+
+    function getMapTileUrl() {
+      let url = buildTileUrl();
+      const threshold = parseInt(document.getElementById('threshold').value);
+      if (threshold > 0) {
+        url = url.replace(/^https?:\/\//, 'cleantile://');
+      }
+      return url;
+    }
+
+    function loadImagery() {
+      const tileUrl = getMapTileUrl();
+
+      // Show tile template for uMap (real URL, not custom protocol)
+      document.getElementById('tile-template').textContent = buildTileUrl();
+
+      // Remove existing layer and source
+      if (map.getLayer('imagery')) map.removeLayer('imagery');
+      if (map.getSource('imagery')) map.removeSource('imagery');
+
+      // Fetch tilejson to get bounds and zoom range
+      const base = document.getElementById('titiler-url').value.replace(/\/$/, '');
+      const cogUrl = document.getElementById('cog-url').value;
+      const nodata = document.getElementById('nodata-toggle').checked;
+      let tjUrl = `${base}/cog/WebMercatorQuad/tilejson.json?url=${encodeURIComponent(cogUrl)}`;
+      if (nodata) tjUrl += '&nodata=0';
+
+      fetch(tjUrl)
+        .then(r => r.json())
+        .then(tj => {
+          map.addSource('imagery', {
+            type: 'raster',
+            tiles: [tileUrl],
+            tileSize: 256,
+            bounds: tj.bounds,
+            minzoom: tj.minzoom,
+            maxzoom: tj.maxzoom
+          });
+
+          map.addLayer({
+            id: 'imagery',
+            type: 'raster',
+            source: 'imagery',
+            paint: {
+              'raster-opacity': opacitySlider.value / 100
+            }
+          });
+
+          // Fly to imagery bounds
+          map.fitBounds(tj.bounds, { padding: 40 });
+        })
+        .catch(err => {
+          alert('Failed to load imagery: ' + err.message);
+          console.error(err);
+        });
+    }
+
+    function togglePanel() {
+      const panel = document.getElementById('panel');
+      const btn = document.getElementById('toggle-btn');
+      if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        btn.style.display = 'none';
+      } else {
+        panel.style.display = 'none';
+        btn.style.display = 'block';
+      }
+    }
+
+    // Auto-load on start
+    map.on('load', loadImagery);
+  </script>
+</body>
+</html>

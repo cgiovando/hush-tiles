@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Data (imagery files are large)
+data/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+
+# SAM build artifacts
+.aws-sam/
+samconfig.toml

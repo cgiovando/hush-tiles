@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  TiTiler COG tile server for private imagery.
+  Serves tiles from private S3 COGs via API Gateway + Lambda.
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: private-imagery-cog
+    Description: S3 bucket containing COG imagery
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1536
+
+Resources:
+  TiTilerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          CPL_VSIL_CURL_ALLOWED_EXTENSIONS: .tif,.tiff,.TIF,.TIFF
+          GDAL_CACHEMAX: "200"
+          GDAL_BAND_BLOCK_CACHE: HASHSET
+          GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+          GDAL_HTTP_MERGE_CONSECUTIVE_RANGES: "YES"
+          GDAL_HTTP_MULTIPLEX: "YES"
+          GDAL_HTTP_VERSION: "2"
+          VSI_CACHE: "TRUE"
+          VSI_CACHE_SIZE: "5000000"
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TiTilerApi
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${S3BucketName}/*"
+    Metadata:
+      DockerTag: titiler
+      DockerContext: .
+      Dockerfile: Dockerfile
+
+  TiTilerApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+
+Outputs:
+  ApiUrl:
+    Description: TiTiler API Gateway URL
+    Value: !Sub "https://${TiTilerApi}.execute-api.${AWS::Region}.amazonaws.com"
+  TileUrlTemplate:
+    Description: Tile URL template for uMap
+    Value: !Sub "https://${TiTilerApi}.execute-api.${AWS::Region}.amazonaws.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=s3://${S3BucketName}/imagery/YOUR_IMAGE.tif"
