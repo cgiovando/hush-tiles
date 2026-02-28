@@ -1,4 +1,4 @@
-# Private Imagery via TiTiler for uMap
+# hush-tiles — Private Imagery via TiTiler for uMap
 
 ## Purpose
 Serve private GeoTIFF imagery as map tiles for uMap overlays. Sensitive imagery that can't be publicly hosted (e.g., on OAM) is stored in a private S3 bucket and served through TiTiler.
@@ -73,7 +73,7 @@ Note: TiTiler v1.x uses `/api.html` for docs (not `/docs`), and `/cog/viewer` / 
 
 ## Phases
 - **Phase 1**: Local testing with uvicorn — COMPLETE
-- **Phase 2**: AWS deployment (personal account) — SAM template ready, deploy with `scripts/deploy.sh`
+- **Phase 2**: AWS deployment (personal account) — COMPLETE, deployed and tested
 - **Phase 3**: Production on HOT infra — CloudFront, auth, custom domain
 
 ## Nodata & Edge Cleanup
@@ -88,7 +88,18 @@ COG imagery often has black borders (nodata pixels) and JPEG compression artifac
 - **`nodata=0`**: TiTiler URL parameter, makes exact-black (0,0,0) pixels transparent server-side. Doesn't catch JPEG artifacts (values 1-10).
 - **Edge cleanup slider**: Client-side canvas processing in `viewer.html` via MapLibre `addProtocol`. Makes near-black pixels transparent. Adds ~23ms overhead per tile.
 
+## AWS Deployment Details
+- **API Gateway URL**: `https://cf38pke0w3.execute-api.us-east-1.amazonaws.com`
+- **Stack name**: `titiler-private-imagery`
+- **Region**: `us-east-1`
+- **Architecture**: arm64 (cheaper Lambda, native build on Apple Silicon)
+- **AWS Profile**: `admin` (user `claude-code`) — the `default` profile lacks CloudFormation permissions
+- **S3 bucket**: `private-imagery-cog` (private, public access blocked)
+- **Test COG**: `s3://private-imagery-cog/imagery/test-image-clean.tif`
+- **Dockerfile note**: Requires `dnf install expat` — Lambda Python base image lacks libexpat needed by GDAL/rasterio
+
 ## Status
 - Phase 1 complete: TiTiler running locally, test COG serving tiles successfully
-- Phase 2 ready: SAM template, Dockerfile, handler, deploy script created — run `scripts/deploy.sh` to deploy
+- Phase 2 complete: Deployed to AWS, TMS and WMTS tested working (MapLibre viewer + QGIS)
+- GitHub repo: https://github.com/cgiovando/hush-tiles
 - MapLibre viewer updated with Local/AWS environment presets
